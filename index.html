@@ -3,265 +3,233 @@
 <head>
   <meta charset="UTF-8" />
   <title>Dark Themed 3D Soccer Kick</title>
-  <!-- Include Three.js from a CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r148/three.min.js"></script>
   <style>
     body, html {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: #111; /* Dark theme background */
-      font-family: sans-serif;
-      color: #fff;
-      user-select: none;
-      height: 100%;
-      width: 100%;
+      margin: 0; padding: 0; overflow: hidden;
+      background-color: #111; 
+      font-family: sans-serif; color: #fff;
+      user-select: none; height: 100%; width: 100%;
     }
     #scoreboard {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      font-size: 18px;
-      z-index: 1;
-      display: none; /* Hide until after game starts */
+      position: absolute; top: 10px; left: 10px;
+      font-size: 18px; z-index: 1; display: none;
     }
     #gameOver {
-      position: absolute;
-      top: 50%;
-      left: 50%;
+      position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      font-size: 32px;
-      text-align: center;
-      display: none;
-      z-index: 2;
+      font-size: 32px; text-align: center;
+      display: none; z-index: 2;
     }
     #startButton {
-      position: absolute;
-      top: 50%;
-      left: 50%;
+      position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      padding: 12px 24px;
-      background-color: #444;
-      color: #fff;
-      border: none;
-      font-size: 18px;
-      cursor: pointer;
-      z-index: 3;
+      padding: 12px 24px; background-color: #444;
+      color: #fff; border: none; font-size: 18px; cursor: pointer; z-index: 3;
     }
-    #startButton:hover {
-      background-color: #666;
-    }
-    canvas {
-      display: block; 
-      outline: none;
-    }
+    #startButton:hover { background-color: #666; }
+    canvas { display: block; outline: none; }
   </style>
 </head>
 <body>
-<div id="scoreboard">Score: 0</div>
-<div id="gameOver">GAME OVER<br>Press R to Restart</div>
-<button id="startButton">Start Game</button>
+  <div id="scoreboard">Score: 0</div>
+  <div id="gameOver">GAME OVER<br>Press R to Restart</div>
+  <button id="startButton">Start Game</button>
 
-<script>
-  let scene, camera, renderer;
-  let ball, goal, ground;
-  let score = 0;
-  let scoreboard = null;
-  let gameOverDiv = null;
-  let startButton = null;
-  let gameOver = false;
-  let shotInProgress = false;
+  <script>
+    let scene, camera, renderer;
+    let ball, goal, ground;
+    let score = 0;
+    let scoreboard, gameOverDiv, startButton;
+    let gameOver = false;
+    let shotInProgress = false;
 
-  // Basic parameters
-  const BALL_RADIUS = 0.4;
-  const GOAL_WIDTH = 3;
-  const GOAL_HEIGHT = 2;
-  const GOAL_DEPTH = 0.3;
-  const BALL_START_Z = 2; // Where ball starts
-  const GOAL_Z = -8;      // Goal position on Z
+    const BALL_RADIUS = 0.4;
+    const GOAL_WIDTH  = 3;
+    const GOAL_HEIGHT = 2;
+    const GOAL_DEPTH  = 0.3;
 
-  // Wait for DOM content, then query elements
-  document.addEventListener('DOMContentLoaded', () => {
-    scoreboard = document.getElementById('scoreboard');
-    gameOverDiv = document.getElementById('gameOver');
-    startButton = document.getElementById('startButton');
-    
-    // Hook up start button
-    startButton.addEventListener('click', () => {
-      startButton.style.display = 'none';   // Hide start button
-      scoreboard.style.display = 'block';   // Show scoreboard
-      init();
-      animate();
+    // Patched: move the ball and goal to negative Z
+    const BALL_START_Z = -2;
+    const GOAL_Z       = -8;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      scoreboard   = document.getElementById('scoreboard');
+      gameOverDiv  = document.getElementById('gameOver');
+      startButton  = document.getElementById('startButton');
+
+      startButton.addEventListener('click', () => {
+        startButton.style.display = 'none';
+        scoreboard.style.display  = 'block';
+        init();
+        animate();
+      });
     });
-  });
 
-  function init() {
-    scene = new THREE.Scene();
+    function init() {
+      scene = new THREE.Scene();
+      // Optionally set a background color to verify rendering
+      scene.background = new THREE.Color(0x111111);
 
-    // Camera setup
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 3, 6);
-    camera.lookAt(0, 0, -10);
+      // Camera setup
+      camera = new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100
+      );
+      camera.position.set(0, 3, 6);
+      // Aim the camera so we definitely see z = -2..-8
+      camera.lookAt(0, 0, -5);
 
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-    scene.add(ambientLight);
+      // Lights (increased ambient so it’s easier to see)
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+      scene.add(ambientLight);
 
-    const spotLight = new THREE.SpotLight(0xffffff, 1);
-    spotLight.position.set(0, 10, 10);
-    spotLight.castShadow = true;
-    scene.add(spotLight);
+      const spotLight = new THREE.SpotLight(0xffffff, 1);
+      spotLight.position.set(0, 10, 10);
+      scene.add(spotLight);
 
-    // Ground (plane)
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
-    const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
-    ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
-    ground.receiveShadow = true;
-    scene.add(ground);
+      // Ground
+      const groundGeometry = new THREE.PlaneGeometry(20, 20);
+      const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+      ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
 
-    // Ball
-    const ballGeometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-    const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
-    ball = new THREE.Mesh(ballGeometry, ballMaterial);
-    ball.castShadow = true;
-    resetBall();
-    scene.add(ball);
+      // Ball
+      const ballGeometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
+      const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      ball = new THREE.Mesh(ballGeometry, ballMaterial);
+      resetBall();
+      scene.add(ball);
 
-    // Goal (box)
-    const goalGeometry = new THREE.BoxGeometry(GOAL_WIDTH, GOAL_HEIGHT, GOAL_DEPTH);
-    const goalMaterial = new THREE.MeshPhongMaterial({ color: 0x444444, transparent: true, opacity: 0.5 });
-    goal = new THREE.Mesh(goalGeometry, goalMaterial);
-    goal.position.set(0, GOAL_HEIGHT / 2, GOAL_Z);
-    goal.receiveShadow = true;
-    scene.add(goal);
+      // Goal
+      const goalGeometry = new THREE.BoxGeometry(GOAL_WIDTH, GOAL_HEIGHT, GOAL_DEPTH);
+      const goalMaterial = new THREE.MeshPhongMaterial({
+        color: 0x444444,
+        transparent: true,
+        opacity: 0.5
+      });
+      goal = new THREE.Mesh(goalGeometry, goalMaterial);
+      goal.position.set(0, GOAL_HEIGHT / 2, GOAL_Z);
+      scene.add(goal);
 
-    // Event listeners
-    window.addEventListener('resize', onWindowResize, false);
-    window.addEventListener('keydown', onKeyDown, false);
-    window.addEventListener('mousedown', onShoot, false);
-    window.addEventListener('touchstart', onShoot, false);
-  }
-
-  function animate() {
-    requestAnimationFrame(animate);
-
-    if (!gameOver && shotInProgress) {
-      updateBall();
-      checkGoal();
+      window.addEventListener('resize', onWindowResize, false);
+      window.addEventListener('keydown', onKeyDown, false);
+      window.addEventListener('mousedown', onShoot, false);
+      window.addEventListener('touchstart', onShoot, false);
     }
 
-    renderer.render(scene, camera);
-  }
-
-  function resetBall() {
-    ball.position.set(0, BALL_RADIUS, BALL_START_Z);
-    shotInProgress = false;
-  }
-
-  function resetGoal() {
-    // Random horizontal shift for the next goal
-    const randomX = (Math.random() - 0.5) * 4; // Range: [-2, 2]
-    goal.position.x = randomX;
-    goal.position.y = GOAL_HEIGHT / 2;
-  }
-
-  function onKeyDown(event) {
-    if (event.code === 'Space') {
-      onShoot();
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!gameOver && shotInProgress) {
+        updateBall();
+        checkGoal();
+      }
+      renderer.render(scene, camera);
     }
-    if (gameOver && event.code === 'KeyR') {
-      restartGame();
+
+    function resetBall() {
+      ball.position.set(0, BALL_RADIUS, BALL_START_Z);
+      shotInProgress = false;
+      ball.userData.velocity = new THREE.Vector3(0, 0, 0);
+      ball.userData.scored   = false;
     }
-  }
 
-  function onShoot() {
-    if (gameOver || shotInProgress) return;
-    shotInProgress = true;
-
-    // Kick the ball forward with slight random lateral deviation
-    const randomAngle = (Math.random() - 0.5) * 0.2; // random offset
-    const speed = 0.2;
-
-    ball.userData.velocity = new THREE.Vector3(
-      Math.sin(randomAngle) * speed, 
-      0, 
-      -Math.cos(randomAngle) * speed
-    );
-  }
-
-  function updateBall() {
-    if (!ball.userData.velocity) return;
-
-    // Update ball position
-    ball.position.add(ball.userData.velocity);
-
-    // Simple friction
-    ball.userData.velocity.multiplyScalar(0.99);
-
-    // If the ball is far behind the goal or very slow, the shot ends
-    if (ball.position.z < GOAL_Z - 3 || ball.userData.velocity.length() < 0.001) {
-      finalizeShot();
+    function resetGoal() {
+      // Slight horizontal shift
+      const randomX = (Math.random() - 0.5) * 4;
+      goal.position.x = randomX;
+      goal.position.y = GOAL_HEIGHT / 2;
     }
-  }
 
-  function checkGoal() {
-    const goalMinX = goal.position.x - GOAL_WIDTH / 2;
-    const goalMaxX = goal.position.x + GOAL_WIDTH / 2;
-    const goalMinY = 0;
-    const goalMaxY = GOAL_HEIGHT;
-    const goalFrontZ = goal.position.z + GOAL_DEPTH / 2;
-    const goalBackZ  = goal.position.z - GOAL_DEPTH / 2;
-
-    const bx = ball.position.x;
-    const by = ball.position.y;
-    const bz = ball.position.z;
-
-    const withinX = (bx > goalMinX + BALL_RADIUS) && (bx < goalMaxX - BALL_RADIUS);
-    const withinY = (by > goalMinY) && (by < goalMaxY + BALL_RADIUS);
-    const behindZ = (bz < goalFrontZ && bz > goalBackZ);
-
-    if (withinX && withinY && behindZ) {
-      ball.userData.scored = true;
+    function onKeyDown(event) {
+      if (event.code === 'Space') onShoot();
+      if (gameOver && event.code === 'KeyR') {
+        restartGame();
+      }
     }
-  }
 
-  function finalizeShot() {
-    shotInProgress = false;
+    function onShoot() {
+      if (gameOver || shotInProgress) return;
+      shotInProgress = true;
 
-    if (ball.userData.scored) {
-      score++;
+      const randomAngle = (Math.random() - 0.5) * 0.2;
+      const speed = 0.2;
+      ball.userData.velocity = new THREE.Vector3(
+        Math.sin(randomAngle) * speed, 
+        0,
+        Math.cos(randomAngle) * speed // note sign flipped if ball is at -z
+      );
+    }
+
+    function updateBall() {
+      if (!ball.userData.velocity) return;
+      ball.position.add(ball.userData.velocity);
+      ball.userData.velocity.multiplyScalar(0.99);
+
+      // If ball goes far beyond the goal or slows, finalize shot
+      if (ball.position.z > GOAL_Z + 3 ||  // note direction is reversed now
+          ball.userData.velocity.length() < 0.001) {
+        finalizeShot();
+      }
+    }
+
+    function checkGoal() {
+      const goalMinX = goal.position.x - GOAL_WIDTH / 2;
+      const goalMaxX = goal.position.x + GOAL_WIDTH / 2;
+      const goalMinY = 0;
+      const goalMaxY = GOAL_HEIGHT;
+      const goalFrontZ = goal.position.z + GOAL_DEPTH / 2;
+      const goalBackZ  = goal.position.z - GOAL_DEPTH / 2;
+
+      const bx = ball.position.x;
+      const by = ball.position.y;
+      const bz = ball.position.z;
+
+      const withinX = (bx > goalMinX + BALL_RADIUS) && (bx < goalMaxX - BALL_RADIUS);
+      const withinY = (by > goalMinY) && (by < goalMaxY + BALL_RADIUS);
+      // Because we moved the ball/goal to negative z, check accordingly:
+      const behindZ = (bz < goalFrontZ && bz > goalBackZ);
+
+      if (withinX && withinY && behindZ) {
+        ball.userData.scored = true;
+      }
+    }
+
+    function finalizeShot() {
+      shotInProgress = false;
+      if (ball.userData.scored) {
+        score++;
+        scoreboard.textContent = `Score: ${score}`;
+        resetGoal();
+        resetBall();
+      } else {
+        gameOver = true;
+        gameOverDiv.style.display = 'block';
+      }
+    }
+
+    function restartGame() {
+      score = 0;
       scoreboard.textContent = `Score: ${score}`;
+      gameOver = false;
+      gameOverDiv.style.display = 'none';
       resetGoal();
       resetBall();
-      ball.userData.scored = false;
-      ball.userData.velocity = new THREE.Vector3(0, 0, 0);
-    } else {
-      gameOver = true;
-      gameOverDiv.style.display = 'block';
     }
-  }
 
-  function restartGame() {
-    score = 0;
-    scoreboard.textContent = `Score: ${score}`;
-    gameOver = false;
-    gameOverDiv.style.display = 'none';
-    resetGoal();
-    resetBall();
-  }
-
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-</script>
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  </script>
 </body>
 </html>
