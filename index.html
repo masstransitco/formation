@@ -23,6 +23,7 @@
       left: 10px;
       font-size: 18px;
       z-index: 1;
+      display: none; /* Hide until after game starts */
     }
     #gameOver {
       position: absolute;
@@ -31,8 +32,24 @@
       transform: translate(-50%, -50%);
       font-size: 32px;
       text-align: center;
-      display: none; /* Hidden by default */
+      display: none;
       z-index: 2;
+    }
+    #startButton {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 12px 24px;
+      background-color: #444;
+      color: #fff;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 3;
+    }
+    #startButton:hover {
+      background-color: #666;
     }
     canvas {
       display: block; 
@@ -43,13 +60,15 @@
 <body>
 <div id="scoreboard">Score: 0</div>
 <div id="gameOver">GAME OVER<br>Press R to Restart</div>
+<button id="startButton">Start Game</button>
 
 <script>
   let scene, camera, renderer;
   let ball, goal, ground;
   let score = 0;
-  let scoreboard = document.getElementById('scoreboard');
-  let gameOverDiv = document.getElementById('gameOver');
+  let scoreboard = null;
+  let gameOverDiv = null;
+  let startButton = null;
   let gameOver = false;
   let shotInProgress = false;
 
@@ -61,8 +80,20 @@
   const BALL_START_Z = 2; // Where ball starts
   const GOAL_Z = -8;      // Goal position on Z
 
-  init();
-  animate();
+  // Wait for DOM content, then query elements
+  document.addEventListener('DOMContentLoaded', () => {
+    scoreboard = document.getElementById('scoreboard');
+    gameOverDiv = document.getElementById('gameOver');
+    startButton = document.getElementById('startButton');
+    
+    // Hook up start button
+    startButton.addEventListener('click', () => {
+      startButton.style.display = 'none';   // Hide start button
+      scoreboard.style.display = 'block';   // Show scoreboard
+      init();
+      animate();
+    });
+  });
 
   function init() {
     scene = new THREE.Scene();
@@ -103,11 +134,11 @@
     resetBall();
     scene.add(ball);
 
-    // Goal (simple box for the frame)
+    // Goal (box)
     const goalGeometry = new THREE.BoxGeometry(GOAL_WIDTH, GOAL_HEIGHT, GOAL_DEPTH);
     const goalMaterial = new THREE.MeshPhongMaterial({ color: 0x444444, transparent: true, opacity: 0.5 });
     goal = new THREE.Mesh(goalGeometry, goalMaterial);
-    goal.position.set(0, GOAL_HEIGHT/2, GOAL_Z);
+    goal.position.set(0, GOAL_HEIGHT / 2, GOAL_Z);
     goal.receiveShadow = true;
     scene.add(goal);
 
@@ -116,6 +147,17 @@
     window.addEventListener('keydown', onKeyDown, false);
     window.addEventListener('mousedown', onShoot, false);
     window.addEventListener('touchstart', onShoot, false);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    if (!gameOver && shotInProgress) {
+      updateBall();
+      checkGoal();
+    }
+
+    renderer.render(scene, camera);
   }
 
   function resetBall() {
@@ -131,23 +173,22 @@
   }
 
   function onKeyDown(event) {
-    if(event.code === 'Space') {
+    if (event.code === 'Space') {
       onShoot();
     }
-    if(gameOver && event.code === 'KeyR') {
+    if (gameOver && event.code === 'KeyR') {
       restartGame();
     }
   }
 
   function onShoot() {
-    if(gameOver || shotInProgress) return;
+    if (gameOver || shotInProgress) return;
     shotInProgress = true;
 
     // Kick the ball forward with slight random lateral deviation
     const randomAngle = (Math.random() - 0.5) * 0.2; // random offset
     const speed = 0.2;
 
-    // We'll store the velocity here and update in the animate loop
     ball.userData.velocity = new THREE.Vector3(
       Math.sin(randomAngle) * speed, 
       0, 
@@ -155,58 +196,38 @@
     );
   }
 
-  function animate() {
-    requestAnimationFrame(animate);
-
-    if(!gameOver && shotInProgress) {
-      updateBall();
-      checkGoal();
-    }
-
-    renderer.render(scene, camera);
-  }
-
   function updateBall() {
-    if(!ball.userData.velocity) return;
+    if (!ball.userData.velocity) return;
 
     // Update ball position
     ball.position.add(ball.userData.velocity);
 
-    // Simple friction: reduce velocity slightly
+    // Simple friction
     ball.userData.velocity.multiplyScalar(0.99);
 
-    // If the ball is far enough behind the goal or very slow, the shot ends
-    if(ball.position.z < GOAL_Z - 3 || ball.userData.velocity.length() < 0.001) {
-      // Check final position for scoring
+    // If the ball is far behind the goal or very slow, the shot ends
+    if (ball.position.z < GOAL_Z - 3 || ball.userData.velocity.length() < 0.001) {
       finalizeShot();
     }
   }
 
   function checkGoal() {
-    // We do a rough bounding box check:
-    // Ball center must be horizontally and vertically within the goal bounds 
-    // and behind the front face of the goal (z ~ GOAL_Z).
-    
     const goalMinX = goal.position.x - GOAL_WIDTH / 2;
     const goalMaxX = goal.position.x + GOAL_WIDTH / 2;
-    const goalMinY = 0; // bottom on the ground
+    const goalMinY = 0;
     const goalMaxY = GOAL_HEIGHT;
-    const goalFrontZ = goal.position.z + GOAL_DEPTH / 2; 
+    const goalFrontZ = goal.position.z + GOAL_DEPTH / 2;
     const goalBackZ  = goal.position.z - GOAL_DEPTH / 2;
 
     const bx = ball.position.x;
     const by = ball.position.y;
     const bz = ball.position.z;
 
-    // Since the ball has some radius, we consider that for collision
-    // but for simplicity, ignore it or treat it as a smaller bounding region
     const withinX = (bx > goalMinX + BALL_RADIUS) && (bx < goalMaxX - BALL_RADIUS);
     const withinY = (by > goalMinY) && (by < goalMaxY + BALL_RADIUS);
     const behindZ = (bz < goalFrontZ && bz > goalBackZ);
 
-    // If at any point the ball is inside, count it as scoring
-    if(withinX && withinY && behindZ) {
-      // We'll mark a property to indicate we scored
+    if (withinX && withinY && behindZ) {
       ball.userData.scored = true;
     }
   }
@@ -214,16 +235,14 @@
   function finalizeShot() {
     shotInProgress = false;
 
-    if(ball.userData.scored) {
+    if (ball.userData.scored) {
       score++;
       scoreboard.textContent = `Score: ${score}`;
       resetGoal();
       resetBall();
-      // Clear the 'scored' flag
       ball.userData.scored = false;
-      ball.userData.velocity = new THREE.Vector3(0,0,0);
+      ball.userData.velocity = new THREE.Vector3(0, 0, 0);
     } else {
-      // Missed shot --> game over
       gameOver = true;
       gameOverDiv.style.display = 'block';
     }
